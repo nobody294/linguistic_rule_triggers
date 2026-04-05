@@ -516,6 +516,7 @@ def run_activation_patching(base_text: str, variant_text: str):
         logits_clean_digits = digit_logit_slice(logits_clean, enc_clean.digit_ids)
         logits_corrupt_digits = digit_logit_slice(logits_corrupt, enc_corrupt.digit_ids)
 
+
     clean_probs   = digit_probs_from_logits_full(logits_clean,   enc_clean,   TEMP_FOR_PROBS)
     corrupt_probs = digit_probs_from_logits_full(logits_corrupt, enc_corrupt, TEMP_FOR_PROBS)
 
