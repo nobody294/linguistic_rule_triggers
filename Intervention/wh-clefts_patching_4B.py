@@ -1,0 +1,435 @@
+import os
+import numpy as np
+import random
+import math
+import contextlib
+import torch
+from torch import nn
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+from transformers import AutoProcessor, Gemma3ForConditionalGeneration
+from transformers.models.gemma3.modeling_gemma3 import (
+    Gemma3DecoderLayer,
+    Gemma3Attention,
+    Gemma3MLP
+)
+
+model_name = "google/gemma-3-4b-it"
+
+SYSTEM_PROMPT = (
+    "You are a voter being asked for opinions. "
+    "Your only job is to rate policy statements on a 1-7 Likert scale."
+)
+
+
+# Example pair for base vs variant
+# BASE_TEXT = "The government should abolish the ban on face-covering clothing."
+# VARIANT_TEXT = "What the government should abolish is the ban on face-covering clothing."
+
+# BASE_TEXT = "The government should make Dutch-language education more frequently mandatory at universities and colleges."
+# VARIANT_TEXT = "What the government should make more frequently mandatory at universities and colleges is Dutch-language education."
+
+# BASE_TEXT = "An increase in minimum wages should no longer automatically result in an increase in welfare benefits."
+# VARIANT_TEXT = "What an increase in minimum wages should no longer automatically result in is an increase in welfare benefits."
+
+# BASE_TEXT = "The efficiency of public services improves when they are privatized."
+# VARIANT_TEXT = "What improves when they are privatized is the efficiency of public services."
+
+# BASE_TEXT = "The future Spanish government should increase irrigated agricultural areas by means of large water transfers."
+# VARIANT_TEXT = "What the future Spanish government should increase by means of large water transfers is irrigated agricultural areas."
+
+# BASE_TEXT = "Spain should be more tolerant with illegal migration."
+# VARIANT_TEXT = "What Spain should be more tolerant with is illegal migration."
+
+# BASE_TEXT = "All employed persons are to be required to be insured in the statutory pension scheme."
+# VARIANT_TEXT = "What all employed persons are to be required to be insured in is the statutory pension scheme."
+
+# BASE_TEXT = "Donations from companies to political parties should continue to be permitted."
+# VARIANT_TEXT = "What should continue to be permitted are donations from companies to political parties."
+
+# BASE_TEXT = "The Nord Stream 2 Baltic Sea pipeline, which transports gas from Russia to Germany, is to be allowed to go into operation as planned."
+# VARIANT_TEXT = "What is to be allowed to go into operation as planned is the Nord Stream 2 Baltic Sea pipeline, which transports gas from Russia to Germany."
+
+# No. 10
+# BASE_TEXT = "The registration of new cars with combustion engines should also be possible in the long term."
+# VARIANT_TEXT = "What should also be possible in the long term is the registration of new cars with combustion engines."
+
+# BASE_TEXT = "Islamic associations are to be able to be recognized by the state as religious communities."
+# VARIANT_TEXT = "What are to be able to be recognized by the state as religious communities are Islamic associations."
+
+# BASE_TEXT = "The government-set price for CO2 emissions from heating and driving is to rise more than planned."
+# VARIANT_TEXT = "What is to rise more than planned is the government-set price for CO2 emissions from heating and driving."
+
+# BASE_TEXT = "Air traffic is to be taxed more heavily."
+# VARIANT_TEXT = "What is to be taxed more heavily is air traffic."
+
+# BASE_TEXT = "The European Union should have less influence on Polish domestic policy."
+# VARIANT_TEXT = "What the European Union should have less influence on is Polish domestic policy."
+
+# BASE_TEXT = "Hungary should decide by referendum whether to remain part of the EU."
+# VARIANT_TEXT = "What Hungary should decide by referendum is whether to remain part of the EU."
+
+# BASE_TEXT = "Political influence has been reduced by changing the university model (reorganisation into a trust)."
+# VARIANT_TEXT = "What has been reduced by changing the university model (reorganisation into a trust) is political influence."
+
+# BASE_TEXT = "Italy should get out of the Eurozone."
+# VARIANT_TEXT = "What Italy should get out of is the Eurozone."
+
+# BASE_TEXT = "The construction of Major Works is a priority for Italy."
+# VARIANT_TEXT = "What is a priority for Italy is the construction of Major Works."
+
+# BASE_TEXT = "The Federal Council's ability to restrict private and economic life in the event of a pandemic should be more limited."
+# VARIANT_TEXT = "What should be more limited is the Federal Council's ability to restrict private and economic life in the event of a pandemic."
+
+# No. 20
+# BASE_TEXT = "The federal government should be given the authority to determine the hospital offering (national hospital planning with regard to locations and range of services)."
+# VARIANT_TEXT = "What the federal government should be given the authority to determine is the hospital offering (national hospital planning with regard to locations and range of services)."
+
+# BASE_TEXT = "According to the Swiss integrated schooling concept, children with learning difficulties or disabilities should be taught in regular classes."
+# VARIANT_TEXT = "What should be taught in regular classes according to the Swiss integrated schooling concept are children with learning difficulties or disabilities."
+
+# BASE_TEXT = "The federal government should raise the requirements for the high school."
+# VARIANT_TEXT = "What the federal government should raise are the requirements for the high school."
+
+# BASE_TEXT = "Doctors should be allowed to administer direct active euthanasia."
+# VARIANT_TEXT = "What doctors should be allowed to administer is direct active euthanasia."
+
+# BASE_TEXT = "There should be stricter controls on equal pay for women and men."
+# VARIANT_TEXT = "What there should be are stricter controls on equal pay for women and men."
+
+# BASE_TEXT = "Automatic facial recognition should be banned in public spaces."
+# VARIANT_TEXT = "What should be banned in public spaces is automatic facial recognition."
+
+BASE_TEXT = "Switzerland should terminate the Bilateral Agreements with the EU and seek a free trade agreement without the free movement of persons."
+VARIANT_TEXT = "What Switzerland should terminate are the Bilateral Agreements with the EU and what Switzerland should seek is a free trade agreement without the free movement of persons."
+
+
+print_top_layers = 34
+TEMP_FOR_PROBS = 1.0
+EPS = 1e-9
+
+
+def get_input_device(model: Gemma3ForConditionalGeneration):
+    try:
+        return model.model.embed_tokens.weight.device
+    except Exception:
+        return next(model.parameters()).device
+
+def get_decoder_layers(model: Gemma3ForConditionalGeneration):
+    layers = []
+    for name, mod in model.named_modules():
+        if isinstance(mod, Gemma3DecoderLayer):
+            layers.append((len(layers), name, mod))
+    if not layers:
+        raise RuntimeError(
+            "No Gemma3DecoderLayer found via named_modules(). "
+            "Check transformers version or model class."
+        )
+    return layers
+
+@dataclass
+class EncodedChat:
+    input_ids: torch.Tensor
+    attention_mask: torch.Tensor
+    answer_pos: int
+    digit_ids: List[int]
+
+
+def build_user_prompt(statement: str) -> str:
+    return (
+        "To what extent do you agree or disagree with the statement below? "
+        "Please rate the statement using a 1-7 mapping score. Mapping: 1=Strongly disagree, "
+        "2=Disagree, 3=Slightly disagree, 4=Neutral, 5=Slightly agree, 6=Agree, 7=Strongly agree. "
+        "Output one digit only.\n\n"
+        f"Statement: {statement}\n"
+        "Score: "
+    )
+
+def encode_for_next_token(
+        processor: AutoProcessor,
+        model: Gemma3ForConditionalGeneration,
+        system_prompt: str,
+        user_prompt: str
+) -> EncodedChat:
+    messages = [
+        {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+        {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
+    ]
+
+    enc = processor.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_tensors="pt",
+        return_dict=True
+    )
+    dev = get_input_device(model)
+    enc = {k: v.to(dev) for k, v in enc.items()}
+
+    input_ids = enc["input_ids"]
+    attention_mask = enc["attention_mask"]
+    seq_len = input_ids.shape[-1]
+    answer_pos = seq_len - 1
+
+    digit_ids = []
+    tok = processor.tokenizer
+    for d in range(1, 8):
+        ids = tok.encode(str(d), add_special_tokens=False)
+        if len(ids) != 1:
+            raise ValueError(
+                f"Digit {d} is not a single token for this tokenizer."
+            )
+        digit_ids.append(ids[0])
+
+    return EncodedChat(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        answer_pos=answer_pos,
+        digit_ids=digit_ids
+    )
+
+@torch.no_grad()
+def forward_logits_only(
+    model: Gemma3ForConditionalGeneration,
+    enc: EncodedChat
+) -> torch.Tensor:
+    out = model(
+        input_ids = enc.input_ids,
+        attention_mask = enc.attention_mask,
+        output_hidden_states = False,
+        return_dict = True
+    )
+    logits = out.logits[:, enc.answer_pos, :].squeeze(0)
+    return logits
+
+def digit_logit_slice(logits: torch.Tensor, digit_ids: List[int]) -> torch.Tensor:
+    idx = torch.tensor(digit_ids, device=logits.device)
+    return logits.index_select(dim=-1, index=idx)
+
+def digit_probs_from_logits_full(
+    logits_full: torch.Tensor, enc: EncodedChat, temperature: float = 1.0
+) -> torch.Tensor:
+    digits = digit_logit_slice(logits_full, enc.digit_ids)
+    return torch.softmax(digits / temperature, dim=-1)
+
+def objective_from_logits_full(
+    logits_full: torch.Tensor,
+    enc: EncodedChat,
+    clean_probs: Optional[torch.Tensor],
+    temperature: float = 1.0,
+) -> torch.Tensor:
+    p = digit_probs_from_logits_full(logits_full, enc, temperature)
+    return torch.sum(clean_probs * torch.log(p.clamp_min(EPS)))
+
+
+class CleanCache:
+    def __init__(self):
+        self.block_out: Dict[int, torch.Tensor] = {}
+        self.attn_out: Dict[int, torch.Tensor] = {}
+        self.mlp_out: Dict[int, torch.Tensor] = {}
+
+    def to_device_like(self, ref: torch.Tensor):
+        for d in (self.block_out, self.attn_out, self.mlp_out):
+            for k, v in d.items():
+                if v.device != ref.device:
+                    d[k] = v.to(ref.device)
+
+
+def collect_clean_cache(
+        model: Gemma3ForConditionalGeneration,
+        enc_clean: EncodedChat
+) -> CleanCache:
+    cache = CleanCache()
+    hooks = []
+
+    def layer_hook(layer_idx):
+        def _hook(module, input, out):
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = hidden[:, enc_clean.answer_pos, :].detach().squeeze(0).to(hidden.dtype)
+            cache.block_out[layer_idx] = vec.cpu()
+            return out
+        return _hook
+
+    def attn_hook(layer_idx):
+        def _hook(module, input, out):
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = hidden[:, enc_clean.answer_pos, :].detach().squeeze(0).to(hidden.dtype)
+            cache.attn_out[layer_idx] = vec.cpu()
+            return out
+        return _hook
+
+    def mlp_hook(layer_idx):
+        def _hook(module, input, out):
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = hidden[:, enc_clean.answer_pos, :].detach().squeeze(0).to(hidden.dtype)
+            cache.mlp_out[layer_idx] = vec.cpu()
+            return out
+        return _hook
+
+    for i, name, layer in get_decoder_layers(model):
+        hooks.append(layer.register_forward_hook(layer_hook(i)))
+        for subname, sub in layer.named_modules():
+            if isinstance(sub, Gemma3Attention):
+                hooks.append(sub.register_forward_hook(attn_hook(i)))
+            elif isinstance(sub, Gemma3MLP):
+                hooks.append(sub.register_forward_hook(mlp_hook(i)))
+
+    with torch.no_grad():
+        _ = model(
+            input_ids = enc_clean.input_ids,
+            attention_mask = enc_clean.attention_mask,
+            output_hidden_states = False,
+            return_dict = True
+        )
+
+    for h in hooks:
+        h.remove()
+    return cache
+
+@contextlib.contextmanager
+def patch_context(
+    model: Gemma3ForConditionalGeneration,
+    enc_corrupt: EncodedChat,
+    cache: CleanCache,
+    patch_spec: Dict[str, List[int]]
+):
+    hooks = []
+    cache.to_device_like(enc_corrupt.input_ids)
+
+    def replace_slice(hidden: torch.Tensor, vec: torch.Tensor):
+        new_hidden = hidden.clone()
+        new_hidden[:, enc_corrupt.answer_pos, :] = vec.to(hidden.dtype).to(hidden.device)
+        return new_hidden
+
+    def layer_patch_hook(layer_idx):
+        def _hook(module, input, out):
+            if layer_idx not in patch_spec.get("block", []):
+                return out
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = cache.block_out[layer_idx].to(hidden.device)
+            new_hidden = replace_slice(hidden, vec)
+            return (new_hidden, *out[1:]) if isinstance(out, tuple) else new_hidden
+        return _hook
+
+    def attn_patch_hook(layer_idx):
+        def _hook(module, input, out):
+            if layer_idx not in patch_spec.get("attn", []):
+                return out
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = cache.attn_out[layer_idx].to(hidden.device)
+            new_hidden = replace_slice(hidden, vec)
+            return (new_hidden, *out[1:]) if isinstance(out, tuple) else new_hidden
+        return _hook
+
+    def mlp_patch_hook(layer_idx):
+        def _hook(module, input, out):
+            if layer_idx not in patch_spec.get("mlp", []):
+                return out
+            hidden = out[0] if isinstance(out, tuple) else out
+            vec = cache.mlp_out[layer_idx].to(hidden.device)
+            new_hidden = replace_slice(hidden, vec)
+            return (new_hidden, *out[1:]) if isinstance(out, tuple) else new_hidden
+        return _hook
+
+    for i, name, layer in get_decoder_layers(model):
+        hooks.append(layer.register_forward_hook(layer_patch_hook(i)))
+        for subname, sub in layer.named_modules():
+            if isinstance(sub, Gemma3Attention):
+                hooks.append(sub.register_forward_hook(attn_patch_hook(i)))
+            elif isinstance(sub, Gemma3MLP):
+                hooks.append(sub.register_forward_hook(mlp_patch_hook(i)))
+
+    try:
+        yield
+    finally:
+        for h in hooks:
+            h.remove()
+
+
+def w_1d(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    cdf_p = torch.cumsum(p, dim=-1)
+    cdf_q = torch.cumsum(q, dim=-1)
+    return torch.sum(torch.abs(cdf_p - cdf_q), dim=-1)
+
+def normalized_restoration(dist_fn, p_clean, p_corrupt, p_patched, eps=1e-12):
+    d0 = dist_fn(p_clean, p_corrupt)
+    dp = dist_fn(p_clean, p_patched)
+    R = 1.0 - dp / (d0 + eps)
+    return torch.where(d0 <= eps, torch.full_like(R, float('nan')), R)
+
+def run_activation_patching(base_text: str, variant_text: str):
+    processor = AutoProcessor.from_pretrained(model_name)
+    model = Gemma3ForConditionalGeneration.from_pretrained(
+        model_name,
+        device_map = "auto",
+        torch_dtype = "auto"
+    ).eval()
+
+    enc_clean = encode_for_next_token(processor, model, SYSTEM_PROMPT, build_user_prompt(base_text))
+    enc_corrupt = encode_for_next_token(processor, model, SYSTEM_PROMPT, build_user_prompt(variant_text))
+
+    with torch.no_grad():
+        logits_clean = forward_logits_only(model, enc_clean)
+        logits_corrupt = forward_logits_only(model, enc_corrupt)
+        logits_clean_digits = digit_logit_slice(logits_clean, enc_clean.digit_ids)
+        logits_corrupt_digits = digit_logit_slice(logits_corrupt, enc_corrupt.digit_ids)
+
+    clean_probs   = digit_probs_from_logits_full(logits_clean,   enc_clean,   TEMP_FOR_PROBS)
+    corrupt_probs = digit_probs_from_logits_full(logits_corrupt, enc_corrupt, TEMP_FOR_PROBS)
+
+    print(f"[Clean logits] {logits_clean_digits}")
+    print(f"[Clean probs]   {clean_probs}")
+    print(f"[Corrupt logits] {logits_corrupt_digits}")
+    print(f"[Corrupt probs] {corrupt_probs}")
+    print("-" * 60)
+
+    clean_cache = collect_clean_cache(model, enc_clean)
+    layers = get_decoder_layers(model)
+    n_layers = len(layers)
+
+    def sweep_patch(kind: str) -> List[Tuple[int, float]]:
+        results = []
+        for l in range(n_layers):
+            spec = {"block": [], "attn": [], "mlp": []}
+            spec[kind] = [l]
+
+            with patch_context(model, enc_corrupt, clean_cache, spec):
+                logits_patched = forward_logits_only(model, enc_corrupt)
+                patched_probs = digit_probs_from_logits_full(logits_patched, enc_clean, TEMP_FOR_PROBS)
+            
+            r = normalized_restoration(w_1d, clean_probs, corrupt_probs, patched_probs)
+            results.append((l, r))
+        return results
+
+    block_results= sweep_patch("block")
+    attn_results= sweep_patch("attn")
+    mlp_results= sweep_patch("mlp")
+
+
+    def print_top(title, arr):
+        arr_sorted = sorted(arr, key=lambda x: (0 if math.isnan(x[1]) else x[1]), reverse=True)
+        print(title)
+        for i, (l, r) in enumerate(arr_sorted[:print_top_layers], 1):
+            txt = "nan" if math.isnan(r) else f"{r:.3f}"
+            print(f" #{i:02d} layer={l:02d} restoration={txt}")
+        print("-" * 60)
+
+    print_top("[Patch - BLOCK - top layers]", block_results)
+    print_top("[Patch - ATTN - top layers]", attn_results)
+    print_top("[Patch - MLP - top layers]", mlp_results)
+
+
+def set_global_determinism(seed: int = 42, single_thread: bool = True):
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":16:8")
+    random.seed(seed); np.random.seed(seed); torch.manual_seed(seed); torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    if single_thread:
+        os.environ["OMP_NUM_THREADS"] = "1"; os.environ["MKL_NUM_THREADS"] = "1"; torch.set_num_threads(1)
+
+
+if __name__ == "__main__":
+    torch.set_grad_enabled(True)
+    set_global_determinism(0, single_thread=True)
+    _ = run_activation_patching(BASE_TEXT, VARIANT_TEXT)
