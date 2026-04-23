@@ -28,4 +28,6 @@ The dataset used in the thesis is contained in `data/statements`.
 
 `data/flip rate` contains the flipped statements of each wording rule.
 
-`data/W1_Score` contains the Wasserstein-1 score of each statement
+`data/W1_Score` contains the Wasserstein-1 score of each statement.
+
+`data/domain` contains the policy domain related statistical data.
