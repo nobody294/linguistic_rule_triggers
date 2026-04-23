@@ -1,0 +1,8 @@
+variant,democracy_media_digit,society_ethics,economy_labor,finance_taxes,welfare_state_family,foreign_relations,energy_transportation,security_armed_forces,health,environ_protection,migration_integration,education
+original,29,28,24,23,21,21,19,17,15,15,14,13
+negation,29,28,24,23,21,21,19,17,15,15,14,13
+opposite,29,28,24,23,21,21,19,17,15,15,14,13
+active_passive,22,24,17,20,19,18,15,12,12,12,12,11
+it-clefts,29,28,24,22,21,21,18,17,15,15,14,12
+wh-clefts,29,28,24,22,21,21,19,17,15,15,14,13
+SVC,11,16,12,12,13,12,11,10,7,5,5,8

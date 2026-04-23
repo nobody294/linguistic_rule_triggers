@@ -3,30 +3,42 @@ import os
 import json
 import pandas as pd
 
-original_csv = "data/original_CI_4B_qwen.csv"
+original_csv = "data/CI/original_CI_4B_qwen.csv"
 variant_csvs = {
-    # "negation": "data/negation_CI_4B_1.csv",
-    # "opposite": "data/opposite_CI_12B.csv",
-    # "active_passive": "data/active_passive_CI_12B.csv",
-    # "it-clefts": "data/it-clefts_CI_4B.csv",
-    # "wh-clefts": "data/wh-clefts_CI_4B.csv",
-    # "SVC": "data/SVC_CI_12B.csv",
-    # "combine_negation_opposite": "data/combine_negation_opposite_CI_12B.csv",
-    # "combine_negation_active_passive": "data/combine_negation_active_passive_CI_12B.csv",
-    # "combine_negation_it-clefts": "data/combine_negation_it-clefts_CI_12B.csv",
-    # "combine_negation_wh-clefts": "data/combine_negation_wh-clefts_CI_12B.csv",
-    # "combine_opposite_active_passive": "data/combine_opposite_active_passive_CI_12B.csv",
-    # "combine_opposite_it-clefts": "data/combine_opposite_it-clefts_CI_12B.csv",
-    # "combine_opposite_wh-clefts": "data/combine_opposite_wh-clefts_CI_12B.csv",
-    # "combine_it-clefts_active_passive": "data/combine_it-clefts_active_passive_CI_12B.csv",
-    # "combine_wh-clefts_active_passive": "data/combine_wh-clefts_active_passive_CI_12B.csv",
-    # "combine_negation_SVC": "data/combine_negation_SVC_CI_12B.csv",
-    # "combine_opposite_SVC": "data/combine_opposite_SVC_CI_12B.csv",
-    # "combine_active_passive_SVC": "data/combine_active_passive_SVC_CI_12B.csv",
-    # "combine_it-clefts_SVC": "data/combine_it-clefts_SVC_CI_12B.csv",
-    # "combine_wh-clefts_SVC": "data/combine_wh-clefts_SVC_CI_12B.csv",
-    "opposite": "data/opposite_CI_4B_qwen.csv",
-    # "combine_negation_opposite": "data/combine_negation_opposite_CI_14B.csv"
+    # "negation": "data/CI/negation_CI_4B.csv",
+    # "opposite": "data/CI/opposite_CI_12B.csv",
+    # "active_passive": "data/CI/active_passive_CI_14B.csv",
+    # "it-clefts": "data/CI/it-clefts_CI_14B.csv",
+    # "wh-clefts": "data/CI/wh-clefts_CI_14B.csv",
+    # "SVC": "data/CI/SVC_CI_14B.csv",
+    # "combine_negation_opposite": "data/CI/combine_negation_opposite_CI_14B.csv",
+    # "combine_negation_active_passive": "data/CI/combine_negation_active_passive_CI_14B.csv",
+    # "combine_negation_it-clefts": "data/CI/combine_negation_it-clefts_CI_14B.csv",
+    # "combine_negation_wh-clefts": "data/CI/combine_negation_wh-clefts_CI_14B.csv",
+    # "combine_opposite_active_passive": "data/CI/combine_opposite_active_passive_CI_14B.csv",
+    # "combine_opposite_it-clefts": "data/CI/combine_opposite_it-clefts_CI_14B.csv",
+    # "combine_opposite_wh-clefts": "data/CI/combine_opposite_wh-clefts_CI_14B.csv",
+    # "combine_it-clefts_active_passive": "data/CI/combine_it-clefts_active_passive_CI_14B.csv",
+    # "combine_wh-clefts_active_passive": "data/CI/combine_wh-clefts_active_passive_CI_14B.csv",
+    # "combine_negation_SVC": "data/CI/combine_negation_SVC_CI_14B.csv",
+    # "combine_opposite_SVC": "data/CI/combine_opposite_SVC_CI_14B.csv",
+    # "combine_active_passive_SVC": "data/CI/combine_active_passive_SVC_CI_14B.csv",
+    # "combine_it-clefts_SVC": "data/CI/combine_it-clefts_SVC_CI_14B.csv",
+    # "combine_wh-clefts_SVC": "data/CI/combine_wh-clefts_SVC_CI_14B.csv",
+    "combine_negation_opposite": "data/CI/combine_negation_opposite_CI_4B_qwen.csv",
+    "combine_negation_active_passive": "data/CI/combine_negation_active_passive_CI_4B_qwen.csv",
+    "combine_negation_it-clefts": "data/CI/combine_negation_it-clefts_CI_4B_qwen.csv",
+    "combine_negation_wh-clefts": "data/CI/combine_negation_wh-clefts_CI_4B_qwen.csv",
+    "combine_opposite_active_passive": "data/CI/combine_opposite_active_passive_CI_4B_qwen.csv",
+    "combine_opposite_it-clefts": "data/CI/combine_opposite_it-clefts_CI_4B_qwen.csv",
+    "combine_opposite_wh-clefts": "data/CI/combine_opposite_wh-clefts_CI_4B_qwen.csv",
+    "combine_it-clefts_active_passive": "data/CI/combine_it-clefts_active_passive_CI_4B_qwen.csv",
+    "combine_wh-clefts_active_passive": "data/CI/combine_wh-clefts_active_passive_CI_4B_qwen.csv",
+    "combine_negation_SVC": "data/CI/combine_negation_SVC_CI_4B_qwen.csv",
+    "combine_opposite_SVC": "data/CI/combine_opposite_SVC_CI_4B_qwen.csv",
+    "combine_active_passive_SVC": "data/CI/combine_active_passive_SVC_CI_4B_qwen.csv",
+    "combine_it-clefts_SVC": "data/CI/combine_it-clefts_SVC_CI_4B_qwen.csv",
+    "combine_wh-clefts_SVC": "data/CI/combine_wh-clefts_SVC_CI_4B_qwen.csv",
 }
 
 out_dir = "data/flip rate"
@@ -95,7 +107,7 @@ for vname, vpath in variant_csvs.items():
                 })
     
     df_flip = pd.DataFrame(flip_rows, columns=["ID", "score_list", "CI"])
-    out_name = f"{vname}_flip_4B_qwen_1.csv"
+    out_name = f"{vname}_flip_4B_qwen.csv"
     out_path = os.path.join(out_dir, out_name)
     df_flip.to_csv(out_path, index=False, encoding="utf-8")
     print(f"[ok] {vname}: pairs={eligible_count}, flips={len(df_flip)} -> {out_path}")

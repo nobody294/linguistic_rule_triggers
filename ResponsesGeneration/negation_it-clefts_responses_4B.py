@@ -3,8 +3,8 @@ import pandas as pd
 import torch
 from transformers import AutoProcessor, Gemma3ForConditionalGeneration
 
-input_csv_dir = "data/combine_negation_it-clefts_variants.csv"
-output_csv_dir = "data/combine_negation_it-clefts_responses_4B.csv"
+input_csv_dir = "data/statements/combine_negation_it-clefts_variants.csv"
+output_csv_dir = "data/responses/combine_negation_it-clefts_responses_4B.csv"
 
 model_name = "google/gemma-3-4b-it"
 

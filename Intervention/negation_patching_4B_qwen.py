@@ -285,11 +285,6 @@ EPS = 1e-9
 QWEN_ENABLE_THINKING = False
 
 
-def flip_probs_1_to_7(p: torch.Tensor) -> torch.Tensor:
-    idx = torch.tensor([6, 5, 4, 3, 2, 1, 0], device=p.device)
-    return p.index_select(dim=-1, index=idx)
-
-
 def get_input_device(model) -> torch.device:
     try:
         return model.get_input_embeddings().weight.device
@@ -549,7 +544,7 @@ def w_1d(p: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
 
 
 def normalized_restoration(dist_fn, p_clean, p_corrupt, p_patched, eps=1e-12):
-    p_target = flip_probs_1_to_7(p_clean)
+    p_target = p_clean
     d0 = dist_fn(p_target, p_corrupt)
     dp = dist_fn(p_target, p_patched)
     R = 1.0 - dp / (d0 + eps)

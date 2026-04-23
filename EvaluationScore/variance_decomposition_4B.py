@@ -4,11 +4,11 @@ import pandas as pd
 from typing import Dict, Tuple
 
 files = {
-    "original": "data/original_responses_4B.csv",
-    "active_passive": "data/active_passive_responses_4B.csv",
-    "it_cleft": "data/it-clefts_responses_4B.csv",
-    "wh_cleft": "data/wh-clefts_responses_4B.csv",
-    "SVC": "data/SVC_responses_4B.csv"
+    "original": "data/responses/original_responses_4B.csv",
+    "active_passive": "data/responses/active_passive_responses_4B.csv",
+    "it_cleft": "data/responses/it-clefts_responses_4B.csv",
+    "wh_cleft": "data/responses/wh-clefts_responses_4B.csv",
+    "SVC": "data/responses/SVC_responses_4B.csv"
 }
 
 BASE_ID_RE = re.compile(r"^[a-z]{2}_[0-9]{1,2}")
